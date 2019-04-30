@@ -1,10 +1,11 @@
+#https://github.com/valerymoskalenko/D365CE-PowerShell-scripts
+
 $tenantDomain = 'contoso.com' 
 [uri]$url =  'https://contosocrm.api.crm.dynamics.com'
 $ApplicationClientId = '699ee32d-a659-000-000-445a3dc7f0fb' 
 $ApplicationClientSecretKey = 'rNfjoieiru984tyolijfeirjfowert85t4t5fvvjeriJbXE='; 
 
-$DataEntity = 'lead' #product'#'salesorderdetail' #'salesorder' #'account' #'contact'  #'customeraddress'
-#$GenerateStandardOnly = $false;  #true - Generate only Standards, false - Generate only NOT standard attributes
+$DataEntity = 'account' #product'#'salesorderdetail' #'salesorder' #'account' #'contact'  #'customeraddress', 'businessunit' 'transactioncurrency' 'lead'
 
 $ErrorActionPreference = "Stop" 
 Write-Host "Authorization..." -ForegroundColor Yellow
@@ -152,6 +153,8 @@ foreach($el in $Entity.Property | Sort-Object -Property Name )
         elseif($AttrType -eq 'String')
         {
             $StringMaxLengh = $AttrReq.MaxLength
+            $dataType = $dataType + '[' + $StringMaxLengh + ']'
+            $AttrReq.AttributeType = $AttrReq.AttributeType + '[' + $StringMaxLengh + ']'
         }
         elseif($AttrType -eq 'Memo')
         {
@@ -219,6 +222,10 @@ foreach($el in $Entity.Property | Sort-Object -Property Name )
             }
         }
 
+        [string]$descriptionField = $null;
+        $descriptionField = ($AttrReq.Description.UserLocalizedLabel | where {$_.LanguageCode -eq 1033}).Label;
+        if ($descriptionField -ne '') { $descriptionField = $descriptionField.Replace(',',';') }
+
         $attrElement = $null;
         $attrElement = @{
             Name              = $el.Name
@@ -226,7 +233,7 @@ foreach($el in $Entity.Property | Sort-Object -Property Name )
             LogicAppAttr      = $el.Name
             Type              = $el.Type
             DataType          = $dataType  #getEdmDataType($el.Type)
-            Description       = ($AttrReq.Description.UserLocalizedLabel | where {$_.LanguageCode -eq 1033}).Label
+            Description       = $descriptionField
             DisplayName       = ($AttrReq.DisplayName.UserLocalizedLabel | where {$_.LanguageCode -eq 1033}).Label
             AttributeTypeAttr = $AttrReq.AttributeType
             OptionSetValues   = $OptionSet
@@ -260,19 +267,13 @@ $EntityCSName = $EntityReq.CollectionSchemaName
 
 #Generate variables
 [String]$className = 'CieIS'+$EntityCSName +'DataContract'
-[String[]]$vararr = @(
-    '/// <summary>',
-    "/// Display Name: $(($EntityReq.DisplayName.UserLocalizedLabel | where {$_.LanguageCode -eq 1033}).Label)"
-    "/// Display Collection Name: $(($EntityReq.DisplayCollectionName.UserLocalizedLabel | where {$_.LanguageCode -eq 1033}).Label)"
-    "/// Description: $(($EntityReq.Description.UserLocalizedLabel | where {$_.LanguageCode -eq 1033}).Label)"
-    '/// </summary>'
-    );
+[String[]]$vararr = @( $EntityCSName );
 
 
 Write-Host "Generate CSV with Metadata description" -ForegroundColor Yellow
 
-$vararr += ('LogicAppAttr,Attribute,Name,DisplayName,Description,' `
-        + 'Type,DataType, AttributeTypeAttr,String max length, Options values,' `
+$vararr += ('Logic App Attr,Display Name,Attribute Type,OptionSet values, ' `
+        + 'Attribute,Name,Description,Type, Data Type, String max length, ' `
         + 'IsPrimaryId,IsPrimaryName,IsValidForCreate,IsValidForRead,IsValidForUpdate,IsCustomAttribute,IsSearchable');
 foreach($key in $attrList.Keys | Sort-Object )
 {
@@ -281,11 +282,13 @@ foreach($key in $attrList.Keys | Sort-Object )
     #Write-Host "Name=" $element.Name  "Type=" $element.Type  -ForegroundColor Yellow
     #$dataType = $element.DataType
 
-    $vararr += ($element.LogicAppAttr +',"'+ $element.DataMemberAttr +'","' + $element.Name +'","'+ $element.DisplayName +'","'+$element.Description +'","' `
-        + $element.Type +'","'+ $element.DataType +'","'+ $element.AttributeTypeAttr +'",'+ $element.StringMaxLengh +',"'+ $element.OptionSetValues +'",' `
+    $vararr += ($element.LogicAppAttr +',"'+ $element.DisplayName  +'","' + $element.AttributeTypeAttr +'","' + $element.OptionSetValues +'","'  `
+        + $element.DataMemberAttr +'","' + $element.Name +'","'+$element.Description +'","' `
+        + $element.Type +'","' + $element.DataType +'",'+ $element.StringMaxLengh +',' `
         + $element.IsPrimaryId +',"'+ $element.IsPrimaryName +'","'+ $element.IsValidForCreate +'","'+ $element.IsValidForRead +'","'+ $element.IsValidForUpdate +'","'+ $element.IsCustomAttribute +'","'+ $element.IsSearchable +'"' );
 
 }
 
 $vararr | Out-File -FilePath c:\temp\a.txt -Encoding utf8 -Force
 notepad c:\temp\a.txt
+
