@@ -1,11 +1,13 @@
 #https://github.com/valerymoskalenko/D365CE-PowerShell-scripts
 
+function Get-D365CEEntityMetaData ([string]$DataEntity) {
 $tenantDomain = 'contoso.com' 
 [uri]$url =  'https://contosocrm.api.crm.dynamics.com'
 $ApplicationClientId = '699ee32d-a659-000-000-445a3dc7f0fb' 
-$ApplicationClientSecretKey = 'rNfjoieiru984tyolijfeirjfowert85t4t5fvvjeriJbXE='; 
+$ApplicationClientSecretKey = 'rNfjoieiru984t55lijfeirjfowert85t4t5fvvjeriJbXE='; 
 
-$DataEntity = 'account' #product'#'salesorderdetail' #'salesorder' #'account' #'contact'  #'customeraddress', 'businessunit' 'transactioncurrency' 'lead'
+#$DataEntity = 'product'  #'salesorderdetail' #'salesorder' #'account' #'contact'  #'customeraddress', 'businessunit' 'transactioncurrency' 'lead'
+#$GenerateStandardOnly = $false;  #true - Generate only Standards, false - Generate only NOT standard attributes
 
 $ErrorActionPreference = "Stop" 
 Write-Host "Authorization..." -ForegroundColor Yellow
@@ -267,7 +269,7 @@ $EntityCSName = $EntityReq.CollectionSchemaName
 
 #Generate variables
 [String]$className = 'CieIS'+$EntityCSName +'DataContract'
-[String[]]$vararr = @( $EntityCSName );
+[String[]]$vararr = @() #= @( $EntityCSName );
 
 
 Write-Host "Generate CSV with Metadata description" -ForegroundColor Yellow
@@ -290,5 +292,38 @@ foreach($key in $attrList.Keys | Sort-Object )
 }
 
 $vararr | Out-File -FilePath c:\temp\a.txt -Encoding utf8 -Force
-notepad c:\temp\a.txt
+#notepad c:\temp\a.txt
+#[hashtable]$Return = @{}
+#[String[]]$Return.CSVOutput = $vararr
+#[String]$Return.EntityName = $EntityCSName
 
+return $vararr
+}
+
+#Generate Excel spreadsheet
+Import-Module -Name ImportExcel
+
+$Entities = @('account','contact','customeraddress','businessunit','transactioncurrency','lead','leadaddress', `
+    'product','salesorder','salesorderdetail', `
+    'bookableresource','competitor','equipment','organization','pricelevel','service','sla','subject','systemuser','team',  `
+    'territory','uom','uomschedule','campaign','incident','campaignresponse','internaladdress','quote','quotedetail','timezonedefinition'  `
+    );
+
+$xlSourcefile = "$env:TEMP\CRM-DataEntitiesMetadata-.xlsx"
+write-host "Excel Save location: $xlSourcefile"
+Remove-Item $xlSourcefile -ErrorAction Ignore
+
+$ExcelThemes = @('Medium1', 'Medium2','Medium3','Medium4','Medium5','Medium6','Medium7','Medium8','Medium9','Medium10')
+$ExcelThemeIdx = 0;
+
+foreach($Entity in $Entities)
+{
+    Write-Host "Working on" $Entity -ForegroundColor Green
+    [String[]]$ResultEntity = Get-D365CEEntityMetaData -DataEntity $Entity
+    Write-Host "..Generating Excel" $xlSourcefile -ForegroundColor Green
+    $excel = $ResultEntity | ConvertFrom-Csv  | Export-Excel -Append -Path $xlSourcefile -WorksheetName $Entity -AutoSize -TableName $Entity -TableStyle $ExcelThemes[$ExcelThemeIdx]
+    $ExcelThemeIdx = $ExcelThemeIdx + 1;
+    if ($ExcelThemeIdx -ge 10) { $ExcelThemeIdx = 0; } #Reset $ExcelThemeIdx if exceed maximum Idx value
+}
+
+& "$xlSourcefile"
