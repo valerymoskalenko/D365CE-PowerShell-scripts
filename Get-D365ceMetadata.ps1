@@ -6,9 +6,6 @@ $tenantDomain = 'contoso.com'
 $ApplicationClientId = '699ee32d-a659-000-000-445a3dc7f0fb' 
 $ApplicationClientSecretKey = 'rNfjoieiru984t55lijfeirjfowert85t4t5fvvjeriJbXE='; 
 
-#$DataEntity = 'product'  #'salesorderdetail' #'salesorder' #'account' #'contact'  #'customeraddress', 'businessunit' 'transactioncurrency' 'lead'
-#$GenerateStandardOnly = $false;  #true - Generate only Standards, false - Generate only NOT standard attributes
-
 $ErrorActionPreference = "Stop" 
 Write-Host "Authorization..." -ForegroundColor Yellow
 Add-Type -AssemblyName System.Web
@@ -301,29 +298,77 @@ return $vararr
 }
 
 #Generate Excel spreadsheet
-Import-Module -Name ImportExcel
+Import-Module -Name ImportExcel  # https://github.com/dfinke/ImportExcel 
 
-$Entities = @('account','contact','customeraddress','businessunit','transactioncurrency','lead','leadaddress', `
+$Entities = @('account','contact','customeraddress','businessunit','transactioncurrency','lead','leadaddress', 'opportunity', `
     'product','salesorder','salesorderdetail', `
+
     'bookableresource','competitor','equipment','organization','pricelevel','service','sla','subject','systemuser','team',  `
     'territory','uom','uomschedule','campaign','incident','campaignresponse','internaladdress','quote','quotedetail','timezonedefinition'  `
     );
 
-$xlSourcefile = "$env:TEMP\CRM-DataEntitiesMetadata-.xlsx"
+
+#Only Main entities
+#$Entities = @('account','contact','customeraddress','businessunit'  );
+
+$xlSourcefile = "$env:TEMP\CRM-DataEntitiesMetadata-$(Get-Date -Format 'yyyyMMdd').xlsx"
 write-host "Excel Save location: $xlSourcefile"
 Remove-Item $xlSourcefile -ErrorAction Ignore
 
 $ExcelThemes = @('Medium1', 'Medium2','Medium3','Medium4','Medium5','Medium6','Medium7','Medium8','Medium9','Medium10')
 $ExcelThemeIdx = 0;
 
+$ExcelIndex = 'Index'
+$Excel = $Entities | ConvertFrom-Csv -Header 'Entity'  | Export-Excel -Append -Path $xlSourcefile -WorksheetName $ExcelIndex -AutoSize -TableName $ExcelIndex -TableStyle 'Light14'  #-PassThru
+
 foreach($Entity in $Entities)
 {
     Write-Host "Working on" $Entity -ForegroundColor Green
     [String[]]$ResultEntity = Get-D365CEEntityMetaData -DataEntity $Entity
-    Write-Host "..Generating Excel" $xlSourcefile -ForegroundColor Green
-    $excel = $ResultEntity | ConvertFrom-Csv  | Export-Excel -Append -Path $xlSourcefile -WorksheetName $Entity -AutoSize -TableName $Entity -TableStyle $ExcelThemes[$ExcelThemeIdx]
+    Write-Host "..Generating Excel spreadsheet for entity" $Entity -ForegroundColor Green
+    $excel = $ResultEntity | ConvertFrom-Csv  | Export-Excel -Append -Path $xlSourcefile -WorksheetName $Entity -AutoSize -TableName $Entity -TableStyle $ExcelThemes[$ExcelThemeIdx] -Title $Entity #-PassThru
     $ExcelThemeIdx = $ExcelThemeIdx + 1;
     if ($ExcelThemeIdx -ge 10) { $ExcelThemeIdx = 0; } #Reset $ExcelThemeIdx if exceed maximum Idx value
 }
 
+
+Write-Host "Updating Index sheet in Excel file" $xlSourcefile -ForegroundColor Green
+$excel = Open-ExcelPackage -Path $xlSourcefile
+$sheet = $Excel.Workbook.Worksheets | Select-Object -First 1
+
+foreach ($row in (($sheet.Dimension.Start.Row + 1) .. $sheet.Dimension.End.Row)) {
+    $Value = $sheet.Cells[$row, 1].Value
+    $Link = "#'"+ $Value +"'!A1"
+    $sheet.cells[$row, 1].Hyperlink = $Link
+    $sheet.cells[$row, 1].Value = $Value
+    $sheet.cells[$row, 1] | Set-ExcelRange -UnderLine -FontColor Blue
+}
+
+Write-Host "Adding link to Index sheet on every worksheet in Excel file" $xlSourcefile -ForegroundColor Green
+foreach($sheet in $Excel.Workbook.Worksheets)
+{
+    if ($sheet.Name -eq $ExcelIndex) {
+        continue
+    }
+
+    Write-Host "..Updating Sheet" $sheet.Name -ForegroundColor Green
+    $Value = $sheet.Cells[1, 1].Value
+    $Link = "#'"+ $ExcelIndex  +"'!A1"
+    $sheet.cells[1, 1].Hyperlink = $Link
+    $sheet.cells[1, 1].Value = $Value
+    $sheet.cells[1, 1] | Set-ExcelRange -FontColor Blue -Bold
+
+    Write-Host "..Updating Width on D and G columns on Sheet" $sheet.Name -ForegroundColor Green
+    foreach($column in @($sheet.Column(4), $sheet.Column(7)) )
+    {
+        if($column.Width -ge 100) {
+            $column | Set-ExcelRange -Width 100
+        }
+    }
+}
+
+
+Close-ExcelPackage $Excel 
+
+Write-Host "Opening Excel file" $xlSourcefile -ForegroundColor Green
 & "$xlSourcefile"
